@@ -1,0 +1,8 @@
+build/*
+logs/*
+platform/*
+.env
+*.env?.*
+.DS_Store
+._*
+!.gitkeep

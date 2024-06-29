@@ -4,9 +4,17 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
+	"strings"
+)
+
+const (
+	KB = 1024
+	MB = KB * 1024
+	GB = MB * 1024
 )
 
 type InterceptedConn struct {
@@ -33,7 +41,7 @@ func NewTCPListener(targetPort string, forwardPort string) error {
 				log.Println(err)
 				continue
 			}
-			go handleNewConn(&InterceptedConn{conn, forwardPort, false}, errCh)
+			go handleNewConn(&InterceptedConn{conn, forwardPort, false})
 		}
 	}()
 	err = <-errCh
@@ -41,29 +49,44 @@ func NewTCPListener(targetPort string, forwardPort string) error {
 	return err
 }
 
-func handleNewConn(conn *InterceptedConn, errCh chan error) {
+func handleNewConn(conn *InterceptedConn) {
 	defer conn.TCPConn.Close()
-	buf := make([]byte, 1024)
+
+	var (
+		buf           = make([]byte, MB)
+		forwardingSrv = fmt.Sprintf("http://127.0.0.1:%s", conn.HTTPForwardPort)
+	)
 	if _, err := conn.TCPConn.Read(buf); err != nil {
-		errCh <- err
+		writeToTCP(conn.TCPConn, []byte("failed to read incoming data"), []byte(err.Error()))
 		return
 	}
 
-	bufReader := bufio.NewReader(bytes.NewReader(buf))
-	parsedReq, err := http.ReadRequest(bufReader)
+	parsedReq, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(buf)))
+	if err != nil || parsedReq == nil {
+		writeToTCP(conn.TCPConn, []byte("failed parse the HTTP request"), []byte(err.Error()))
+		return
+	}
+	res, err := forwardHttpReq(parsedReq, forwardingSrv)
 	if err != nil {
-		errCh <- err
+		writeToTCP(
+			conn.TCPConn,
+			[]byte(fmt.Sprintf("unable to forward the request to %s", forwardingSrv)),
+			[]byte(err.Error()),
+		)
 		return
 	}
-	if parsedReq == nil {
-		errCh <- fmt.Errorf("failed to parse the incoming http request\n")
-		return
-	}
+	writeToTCP(conn.TCPConn, res)
+}
 
-	newReq, err := http.NewRequest(parsedReq.Method, fmt.Sprintf("127.0.0.1:%s%s", conn.HTTPForwardPort, parsedReq.RequestURI), parsedReq.Body)
+func forwardHttpReq(parsedReq *http.Request, srvUrl string) ([]byte, error) {
+	var resBuf bytes.Buffer
+	newReq, err := http.NewRequest(
+		parsedReq.Method,
+		fmt.Sprintf("%s%s", srvUrl, parsedReq.RequestURI),
+		parsedReq.Body,
+	)
 	if err != nil {
-		errCh <- err
-		return
+		return nil, err
 	}
 	for _, c := range parsedReq.Cookies() {
 		newReq.AddCookie(c)
@@ -73,10 +96,37 @@ func handleNewConn(conn *InterceptedConn, errCh chan error) {
 			newReq.Header.Add(k, v)
 		}
 	}
-
 	res, err := http.DefaultClient.Do(newReq)
 	if err != nil {
-		errCh <- err
-		return
+		return nil, err
+	}
+
+	resBuf.WriteString(fmt.Sprintf("HTTP/%d.%d %d %s\r\n",
+		res.ProtoMajor, res.ProtoMinor, res.StatusCode, res.Status))
+	for k, v := range res.Header {
+		resBuf.WriteString(fmt.Sprintf("%s: %s\r\n", k, strings.Join(v, ",")))
+	}
+	// TODO: add cookies to the response
+	// for _, v := range res.Cookies() {
+	// }
+	resBuf.WriteString("\r\n")
+	if res.Body != nil {
+		b, err := io.ReadAll(res.Body)
+		if err != nil {
+			log.Println("Unable to read response body:", err)
+		}
+		if _, err = resBuf.Write(b); err != nil {
+			return nil, err
+		}
+	}
+	return resBuf.Bytes(), nil
+}
+
+func writeToTCP(conn *net.TCPConn, res ...[]byte) {
+	for _, v := range res {
+		if _, err := conn.Write(v); err != nil {
+			log.Println("Unable to write response to TCP connection.", err)
+			break
+		}
 	}
 }

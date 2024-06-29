@@ -1,9 +1,12 @@
 package tcpinterceptor
 
 import (
+	"bufio"
+	"bytes"
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 )
 
 type InterceptedConn struct {
@@ -46,5 +49,34 @@ func handleNewConn(conn *InterceptedConn, errCh chan error) {
 		return
 	}
 
-	fmt.Println(string(buf))
+	bufReader := bufio.NewReader(bytes.NewReader(buf))
+	parsedReq, err := http.ReadRequest(bufReader)
+	if err != nil {
+		errCh <- err
+		return
+	}
+	if parsedReq == nil {
+		errCh <- fmt.Errorf("failed to parse the incoming http request\n")
+		return
+	}
+
+	newReq, err := http.NewRequest(parsedReq.Method, fmt.Sprintf("127.0.0.1:%s%s", conn.HTTPForwardPort, parsedReq.RequestURI), parsedReq.Body)
+	if err != nil {
+		errCh <- err
+		return
+	}
+	for _, c := range parsedReq.Cookies() {
+		newReq.AddCookie(c)
+	}
+	for k, values := range parsedReq.Header {
+		for _, v := range values {
+			newReq.Header.Add(k, v)
+		}
+	}
+
+	res, err := http.DefaultClient.Do(newReq)
+	if err != nil {
+		errCh <- err
+		return
+	}
 }

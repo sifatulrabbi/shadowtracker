@@ -61,7 +61,7 @@ func NewLogger(opts *NewLoggerOptions) *Logger {
 				l := <-logger.queue
 				fmt.Printf("new log received in worker(%d): %v\n", i, l)
 				filename := path.Join(logger.RootDest, fmt.Sprintf("%s.log", l.CreatedAt.Format(time.RFC3339)))
-				f, err := os.Open(filename)
+				f, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0644)
 				if err != nil {
 					log.Panicf("Unable to open '%s' due to: %s", filename, err)
 					continue

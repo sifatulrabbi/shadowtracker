@@ -11,7 +11,7 @@ This tool interprets any HTTP or HTTPS traffic of a specified port and forwards 
 Follow the [official documentation](https://go.dev/doc/install) to install Go on your system.
 
 ```bash
-go install github.com/sifatulrabbi/shadowtracker
+go install github.com/sifatulrabbi/shadowtracker@latest
 ```
 
 ### Run shadowtracker and monitor your traffic

@@ -79,8 +79,14 @@ func handleNewConn(conn *InterceptedConn) {
 	}
 	localLog.HTTPMethod = parsedReq.Method
 	localLog.ReqPath = parsedReq.URL.RequestURI()
-	localLog.ClientIP = parsedReq.Header.Get("x-forwared-by")
 	localLog.HTTPVersion = fmt.Sprintf("%d.%d", parsedReq.ProtoMajor, parsedReq.ProtoMinor)
+	localLog.ClientIP = parsedReq.Header.Get("x-real-ip")
+	if localLog.ClientIP == "" {
+		localLog.ClientIP = parsedReq.Header.Get("x-forwared-by")
+	}
+	if localLog.ClientIP == "" {
+		localLog.ClientIP = parsedReq.RemoteAddr
+	}
 
 	res, err := forwardHttpReq(parsedReq, forwardingSrv, &localLog)
 	if err != nil {

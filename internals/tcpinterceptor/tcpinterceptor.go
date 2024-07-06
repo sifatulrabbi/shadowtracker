@@ -62,7 +62,7 @@ func handleNewConn(conn *InterceptedConn) {
 	)
 
 	defer conn.TCPConn.Close()
-	defer conn.logger.WriteHTTPLog(localLog, start)
+	defer conn.logger.WriteHTTPLog(&localLog, start)
 
 	if _, err := conn.TCPConn.Read(buf); err != nil {
 		writeToTCP(conn.TCPConn, []byte("failed to read incoming data"), []byte(err.Error()))

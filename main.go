@@ -10,16 +10,18 @@ import (
 )
 
 func main() {
-	action := flag.String("action", "start", "Enter the action you want to perform")
-	target := flag.String("target", "", "Enter the port to listen to")
-	forward := flag.String("forward", "", "Enter the traffic forwarding port")
-	logger := logswriter.NewLogger(&logswriter.NewLoggerOptions{Destination: "./logs", WorkerCount: 1024})
+	var (
+		logger  *logswriter.Logger
+		action  = flag.String("action", "start", "Enter the action you want to perform")
+		logsDir = flag.String("logsdir", "/var/log/shadowtracker", "Enter the logs directory path")
+		target  = flag.String("target", "", "Enter the port to listen to")
+		forward = flag.String("forward", "", "Enter the traffic forwarding port")
+	)
 	flag.Parse()
-
-	fmt.Println(*action, *target, *forward)
+	logger = logswriter.NewLogger(&logswriter.NewLoggerOptions{Destination: *logsDir})
 
 	if *target == "" || *forward == "" {
-		log.Panicln("'--target' and '--forward' is required")
+		log.Panicln("'-target' and '-forward' is required")
 	}
 
 	switch *action {

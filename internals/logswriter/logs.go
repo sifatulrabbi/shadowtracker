@@ -5,11 +5,12 @@ import (
 	"log"
 	"os"
 	"path"
+	"strings"
 	"sync"
 	"time"
 )
 
-const ACTIVE_WORKER_COUNT int = 1024
+const ACTIVE_WORKER_COUNT int = 1000
 
 type Log struct {
 	HTTPMethod   string
@@ -39,7 +40,7 @@ type NewLoggerOptions struct {
 
 func NewLogger(opts *NewLoggerOptions) *Logger {
 	if opts == nil {
-		opts = &NewLoggerOptions{Destination: "/var/logs"}
+		opts = &NewLoggerOptions{Destination: "/var/log/shadowtracker"}
 	}
 	if opts.WorkerCount < 1 {
 		opts.WorkerCount = ACTIVE_WORKER_COUNT
@@ -50,14 +51,17 @@ func NewLogger(opts *NewLoggerOptions) *Logger {
 	if _, err := os.ReadDir(logger.RootDest); err != nil {
 		if os.IsNotExist(err) {
 			if err := os.MkdirAll(logger.RootDest, 0755); err != nil {
-				log.Panicf("Unable to use '%s' as root destination because of: %s\n", logger.RootDest, err)
+				if strings.Contains(err.Error(), "permission denied") {
+					log.Panicf("Unable to use '%s' as root destination because of: %s. Please run shadowtracker with 'sudo'\n", logger.RootDest, err)
+				} else {
+					log.Panicf("Unable to use '%s' as root destination because of: %s\n", logger.RootDest, err)
+				}
 			}
 		} else {
 			log.Panicf("Unable to use '%s' as root destination because of: %s\n", logger.RootDest, err)
 		}
 	}
 
-	log.Printf("spawning %d log workers\n", opts.WorkerCount)
 	for i := opts.WorkerCount; i > 0; i-- {
 		go func() {
 			for {
@@ -81,7 +85,7 @@ func (l *Logger) writeToLogFile(localLog *Log) {
 	filename := path.Join(l.RootDest, fmt.Sprintf("%s.log", localLog.CreatedAt.Format("2006-01-02")))
 	if l.logFile == nil || l.logFile.Name() != filename {
 		if f, err := os.OpenFile(filename, os.O_APPEND|os.O_RDWR|os.O_CREATE, 0644); err != nil {
-			log.Panicf("unable to open/create '%s' due to: %s\n", filename, err)
+			log.Panicf("unable to open/create '%s' because of: %s\n", filename, err)
 		} else {
 			stat, _ := f.Stat()
 			if stat.Size() < 1 {
@@ -103,7 +107,7 @@ func (l *Logger) writeToLogFile(localLog *Log) {
 		if os.IsNotExist(err) {
 			l.writeToLogFile(localLog)
 		} else {
-			log.Printf("Unable to write the log to '%s' due to: %s", filename, err)
+			log.Printf("Unable to write the log to '%s' because of: %s", filename, err)
 		}
 	}
 }
